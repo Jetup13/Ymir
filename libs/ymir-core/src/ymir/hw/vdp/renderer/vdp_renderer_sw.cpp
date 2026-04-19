@@ -57,10 +57,12 @@ namespace grp {
 
 } // namespace grp
 
-SoftwareVDPRenderer::SoftwareVDPRenderer(VDPState &state, config::VDP2DebugRender &vdp2DebugRenderOptions)
+SoftwareVDPRenderer::SoftwareVDPRenderer(VDPState &state, config::VDP2DebugRender &vdp2DebugRenderOptions,
+                                         const config::VDP2AccessPatternsConfig &vdp2AccessPatternsConfig)
     : IVDPRenderer(VDPRendererType::Software)
     , m_state(state)
-    , m_vdp2DebugRenderOptions(vdp2DebugRenderOptions) {
+    , m_vdp2DebugRenderOptions(vdp2DebugRenderOptions)
+    , m_vdp2AccessPatternsConfig(vdp2AccessPatternsConfig) {
 
     UpdateFunctionPointers();
 
@@ -422,10 +424,14 @@ void SoftwareVDPRenderer::VDP1EraseFramebuffer(uint64 cycles) {
         m_vdp2RenderingContext.eraseFramebufferReadySignal.Wait();
         m_vdp2RenderingContext.eraseFramebufferReadySignal.Reset();
     }
-    if (cycles == 0) {
-        VDP1DoEraseFramebuffer<false>();
+    if (m_threadedVDP1Rendering) {
+        m_vdp1RenderingContext.EnqueueEvent(VDP1RenderEvent::EraseFramebuffer(cycles));
     } else {
-        VDP1DoEraseFramebuffer<true>(cycles);
+        if (cycles == 0) {
+            VDP1DoEraseFramebuffer<false>();
+        } else {
+            VDP1DoEraseFramebuffer<true>(cycles);
+        }
     }
 }
 
@@ -502,7 +508,7 @@ void SoftwareVDPRenderer::VDP2BeginFrame() {
 void SoftwareVDPRenderer::VDP2RenderLine(uint32 y) {
     if (m_threadedVDP2Rendering) {
         m_vdp2RenderingContext.EnqueueEvent(VDP2RenderEvent::VDP2DrawLine(y));
-        m_state.state2.CalcAccessPatterns(m_state.regs2);
+        m_state.state2.CalcAccessPatterns(m_state.regs2, m_vdp2AccessPatternsConfig);
         m_state.state2.CalcVCellScrollDelay(m_state.regs2);
     } else {
         const bool interlaced = m_state.regs2.TVMD.IsInterlaced();
@@ -578,6 +584,13 @@ void SoftwareVDPRenderer::VDP1RenderThread() {
             switch (event.type) {
             case EvtType::Reset: rctx.Reset(); break;
 
+            case EvtType::EraseFramebuffer:
+                if (event.erase.cycles == 0) {
+                    VDP1DoEraseFramebuffer<false>();
+                } else {
+                    VDP1DoEraseFramebuffer<true>(event.erase.cycles);
+                }
+                break;
             case EvtType::SwapBuffers: rctx.swapBuffersSignal.Set(); break;
             case EvtType::Command: (this->*m_fnVDP1HandleCommand)(event.command.address, event.command.control); break;
 
@@ -2296,7 +2309,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2PrepareLine(uint32 y) {
         return;
     }
 
-    m_state.state2.CalcAccessPatterns(regs2);
+    m_state.state2.CalcAccessPatterns(regs2, m_vdp2AccessPatternsConfig);
     m_state.state2.CalcVCellScrollDelay(regs2);
     if (regs2.bgEnabled[4] || regs2.bgEnabled[5]) {
         VDP2CalcRotationParameterTables(y);
@@ -2443,13 +2456,12 @@ NO_INLINE void SoftwareVDPRenderer::VDP2DrawSpriteLayer(uint32 y) {
     // VDP1 scaling:
     // 2x horz resolution: VDP1 TVM=000 and VDP2 HRESO=01x
     // 1/2x horz readout:  VDP1 TVM=001 and VDP2 HRESO=00x
-    const bool doubleResH =
-        !regs1.hdtvEnable && !regs1.fbRotEnable && !regs1.pixel8Bits && (regs2.TVMD.HRESOn & 0b110) == 0b010;
-    const bool halfResH =
-        !regs1.hdtvEnable && !regs1.fbRotEnable && regs1.pixel8Bits && (regs2.TVMD.HRESOn & 0b110) == 0b000;
-    const uint32 xShift = doubleResH ? 1 : 0;
-    const uint32 xSpriteShift = halfResH ? 1 : 0;
-    const uint32 maxX = std::min<uint32>(m_HRes >> xShift, kMaxNormalResH);
+    const bool exclMon = (regs2.TVMD.HRESOn & 0b100) != 0;
+    const bool doubleResH = !regs1.hdtvEnable && !rotate && !regs1.pixel8Bits && (regs2.TVMD.HRESOn & 0b110) == 0b010;
+    const bool halfResH = !regs1.hdtvEnable && !rotate && regs1.pixel8Bits && (regs2.TVMD.HRESOn & 0b110) == 0b000;
+    const uint32 xOutputShift = doubleResH || exclMon ? 1 : 0;
+    const uint32 xReadoutShift = halfResH ? 1 : 0;
+    const uint32 maxX = m_HRes >> xOutputShift;
 
     const bool doubleDensity = regs2.TVMD.LSMDn == InterlaceMode::DoubleDensity;
 
@@ -2465,7 +2477,7 @@ NO_INLINE void SoftwareVDPRenderer::VDP2DrawSpriteLayer(uint32 y) {
     [[maybe_unused]] const auto &meshFB = m_meshFB[altField][fbIndex];
 
     for (uint32 x = 0; x < maxX; x++) {
-        const uint32 xx = x << xShift;
+        const uint32 xx = x << xOutputShift;
 
         uint32 spriteFBOffset;
         if constexpr (rotate) {
@@ -2492,7 +2504,7 @@ NO_INLINE void SoftwareVDPRenderer::VDP2DrawSpriteLayer(uint32 y) {
             }
             spriteFBOffset = coord.x() + coord.y() * regs1.fbSizeH;
         } else {
-            spriteFBOffset = (x << xSpriteShift) + y * regs1.fbSizeH;
+            spriteFBOffset = (x << xReadoutShift) + y * regs1.fbSizeH;
         }
 
         VDP2DrawSpritePixel<colorMode, altField, transparentMeshes, false>(xx, params, spriteFB, spriteFBOffset);
@@ -3652,16 +3664,16 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
         return;
     }
 
-    // NOTE: All arrays here are intentionally left uninitialized for performance.
-    // Only the necessary entries are initialized and used.
+    auto &composeLineBuffers = m_composeLineBuffers[altField];
+
+    auto &scanline_layers = composeLineBuffers.scanline_layers;
+    auto &scanline_layerPrios = composeLineBuffers.scanline_layerPrios;
 
     // Determine layer order
     static constexpr std::array<LayerIndex, 3> kLayersInit{LYR_Back, LYR_Back, LYR_Back};
-    alignas(16) std::array<std::array<LayerIndex, 3>, kMaxResH> scanline_layers;
     std::fill_n(scanline_layers.begin(), m_HRes, kLayersInit);
 
     static constexpr std::array<uint8, 3> kLayerPriosInit{0, 0, 0};
-    alignas(16) std::array<std::array<uint8, 3>, kMaxResH> scanline_layerPrios;
     std::fill_n(scanline_layerPrios.begin(), m_HRes, kLayerPriosInit);
 
     for (int layer = 0; layer < m_layerOutputs[altField].size(); layer++) {
@@ -3717,7 +3729,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
     }
 
     // Find the sprite mesh layers
-    alignas(16) std::array<uint8, kMaxResH> scanline_meshLayers;
+    auto &scanline_meshLayers = composeLineBuffers.scanline_meshLayers;
     if constexpr (transparentMeshes) {
         std::fill_n(scanline_meshLayers.begin(), m_HRes, 0xFF);
 
@@ -3761,7 +3773,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
     };
 
     // Gather pixels for layer 0
-    alignas(16) std::array<Color888, kMaxResH> layer0Pixels;
+    auto &layer0Pixels = composeLineBuffers.layer0Pixels;
     for (uint32 x = 0; x < m_HRes; x++) {
         layer0Pixels[x] = getLayerColor(scanline_layers[x][0], x);
     }
@@ -3791,8 +3803,8 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
     };
 
     // Gather layer color calculation data
-    alignas(16) std::array<bool, kMaxResH> layer0ColorCalcEnabled;
-    alignas(16) std::array<bool, kMaxResH> layer0BlendMeshLayer;
+    auto &layer0ColorCalcEnabled = composeLineBuffers.layer0ColorCalcEnabled;
+    auto &layer0BlendMeshLayer = composeLineBuffers.layer0BlendMeshLayer;
 
     for (uint32 x = 0; x < m_HRes; x++) {
         const LayerIndex layer = scanline_layers[x][0];
@@ -3819,8 +3831,8 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
 
     if (AnyBool(std::span{layer0ColorCalcEnabled}.first(m_HRes))) {
         // Gather pixels for layer 1
-        alignas(16) std::array<Color888, kMaxResH> layer1Pixels;
-        alignas(16) std::array<bool, kMaxResH> layer1BlendMeshLayer;
+        auto &layer1Pixels = composeLineBuffers.layer1Pixels;
+        auto &layer1BlendMeshLayer = composeLineBuffers.layer1BlendMeshLayer;
         for (uint32 x = 0; x < m_HRes; x++) {
             layer1Pixels[x] = getLayerColor(scanline_layers[x][1], x);
             if constexpr (transparentMeshes) {
@@ -3832,8 +3844,8 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
         const uint32 xShift = doubleResH ? 1 : 0;
 
         // Gather line-color data
-        alignas(16) std::array<bool, kMaxResH> layer0LineColorEnabled;
-        alignas(16) std::array<Color888, kMaxResH> layer0LineColors;
+        auto &layer0LineColorEnabled = composeLineBuffers.layer0LineColorEnabled;
+        auto &layer0LineColors = composeLineBuffers.layer0LineColors;
         for (uint32 x = 0; x < m_HRes; x++) {
             const LayerIndex layer = scanline_layers[x][0];
 
@@ -3863,9 +3875,9 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
 
         // Apply extended color calculations to layer 1
         if (useExtendedColorCalc) {
-            alignas(16) std::array<bool, kMaxResH> layer1ColorCalcEnabled;
-            alignas(16) std::array<Color888, kMaxResH> layer2Pixels;
-            alignas(16) std::array<bool, kMaxResH> layer2BlendMeshLayer;
+            auto &layer1ColorCalcEnabled = composeLineBuffers.layer1ColorCalcEnabled;
+            auto &layer2Pixels = composeLineBuffers.layer2Pixels;
+            auto &layer2BlendMeshLayer = composeLineBuffers.layer2BlendMeshLayer;
 
             // Gather pixels for layer 2
             for (uint32 x = 0; x < m_HRes; x++) {
@@ -3919,7 +3931,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
             Color888SatAddMasked(framebufferOutput, layer0ColorCalcEnabled, layer0Pixels, layer1Pixels);
         } else {
             // Gather color ratio info
-            alignas(16) std::array<uint8, kMaxResH> scanline_ratio;
+            auto &scanline_ratio = composeLineBuffers.scanline_ratio;
             for (uint32 x = 0; x < m_HRes; x++) {
                 if (!layer0ColorCalcEnabled[x]) {
                     continue;
@@ -3952,7 +3964,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
     }
 
     // Gather shadow data
-    alignas(16) std::array<bool, kMaxResH> layer0ShadowEnabled;
+    auto &layer0ShadowEnabled = composeLineBuffers.layer0ShadowEnabled;
     for (uint32 x = 0; x < m_HRes; x++) {
         // Sprite layer is beneath top layer
         if (m_layerOutputs[altField][LYR_Sprite].pixels.priority[x] < scanline_layerPrios[x][0]) {
@@ -3983,7 +3995,7 @@ FORCE_INLINE void SoftwareVDPRenderer::VDP2ComposeLine(uint32 y, bool altField) 
     }
 
     // Gather color offset info
-    alignas(16) std::array<bool, kMaxResH> layer0ColorOffsetEnabled;
+    auto &layer0ColorOffsetEnabled = composeLineBuffers.layer0ColorOffsetEnabled;
     for (uint32 x = 0; x < m_HRes; x++) {
         layer0ColorOffsetEnabled[x] = regs.colorOffsetEnable[scanline_layers[x][0]];
     }
