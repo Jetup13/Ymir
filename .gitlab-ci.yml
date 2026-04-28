@@ -9,15 +9,17 @@
   variables:
     CORENAME: ymir
     EXTRA_PATH: apps/ymir-libretro
+    # CORE_ARCH_ARGS is filled in per-arch (e.g. AVX2 on x86_64). Default empty
+    # so non-x86_64 jobs don't pick up x86-only flags.
+    CORE_ARCH_ARGS: ""
     CORE_ARGS: >-
       -DYmir_ENABLE_LIBRETRO=ON
       -DYmir_ENABLE_SDL3_APP=OFF
       -DYmir_ENABLE_SANDBOX=OFF
       -DYmir_ENABLE_YMDASM=OFF
       -DYmir_ENABLE_TESTS=OFF
-      -DYmir_INCLUDE_PACKAGING=OFF
       -DYmir_DEV_BUILD=OFF
-      -DYmir_AVX2=ON
+      $CORE_ARCH_ARGS
     GIT_SUBMODULE_STRATEGY: recursive
 
 # Inclusion templates, required for the build to work
@@ -74,6 +76,7 @@ libretro-build-windows-x64:
   image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-mxe-win-cross-cores:gcc12
   variables:
     CMAKE: x86_64-w64-mingw32.clang-cmake
+    CORE_ARCH_ARGS: "-DYmir_AVX2=ON"
 
 # Linux 64-bit
 libretro-build-linux-x64:
@@ -84,6 +87,7 @@ libretro-build-linux-x64:
   variables:
     CC: /usr/bin/gcc-12
     CXX: /usr/bin/g++-12
+    CORE_ARCH_ARGS: "-DYmir_AVX2=ON"
 
 # MacOS 64-bit
 libretro-build-osx-x64:
@@ -94,6 +98,7 @@ libretro-build-osx-x64:
     - .core-defs
   variables:
     MACOSX_DEPLOYMENT_TARGET: "10.15"
+    CORE_ARCH_ARGS: "-DYmir_AVX2=ON"
 
 # MacOS ARM 64-bit
 libretro-build-osx-arm64:
@@ -117,6 +122,7 @@ android-x86_64:
     - .core-defs
   variables:
     NDK_ROOT: /android-sdk-linux/ndk/26.2.11394342
+    CORE_ARCH_ARGS: "-DYmir_AVX2=ON"
 
 # iOS
 libretro-build-ios-arm64:

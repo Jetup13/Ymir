@@ -1,19 +1,28 @@
 include(FetchContent)
 
-# zstd - build from bundled source
-set(ZSTD_BUILD_SHARED OFF)
-set(ZSTD_BUILD_PROGRAMS OFF)
-set(ZSTD_LEGACY_SUPPORT OFF)
+# zstd - build from bundled single-file decoder shipped by libchdr.
+# libchdr now ships a stripped-down decoder (zstd-1.5.7/CMakeLists.txt) that
+# builds a target simply named "zstd"; the libchdr wrapper expects the
+# vcpkg-style "zstd::libzstd_static" alias, so create it here.
 FetchContent_Declare(zstd
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/vendor/libchdr/libchdr/deps/zstd-1.5.6/build/cmake
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/vendor/libchdr/libchdr/deps/zstd-1.5.7
     OVERRIDE_FIND_PACKAGE
 )
-# Eagerly populate zstd so we can add the namespaced alias that libchdr expects.
-# When built as a subdirectory the target is "libzstd_static", but find_package
-# would provide "zstd::libzstd_static".
 FetchContent_MakeAvailable(zstd)
-if (TARGET libzstd_static AND NOT TARGET zstd::libzstd_static)
-    add_library(zstd::libzstd_static ALIAS libzstd_static)
+if (TARGET zstd AND NOT TARGET zstd::libzstd_static)
+    add_library(zstd::libzstd_static ALIAS zstd)
+endif ()
+
+# miniz - build from bundled source shipped by libchdr.
+# The libchdr wrapper now requires miniz (find_package(miniz CONFIG REQUIRED))
+# and links against miniz::miniz.
+FetchContent_Declare(miniz
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/vendor/libchdr/libchdr/deps/miniz-3.1.1
+    OVERRIDE_FIND_PACKAGE
+)
+FetchContent_MakeAvailable(miniz)
+if (TARGET miniz AND NOT TARGET miniz::miniz)
+    add_library(miniz::miniz ALIAS miniz)
 endif ()
 
 # fmt - fetch from GitHub
