@@ -8,6 +8,7 @@ Uses save state file version 12.
 
 ### New features and improvements
 
+- App: Rotate screenshots based on selected display rotation.
 - SCU: Optimize DSP operations involving 48-bit registers.
 
 ### Fixes
