@@ -81,4 +81,41 @@ TEST_CASE("ymir-dbg JsonRpcAdapter handles malformed and unsupported input", "[p
     auto batch = ymir::debug::JsonRpcAdapter::ParseRequest(R"([{"jsonrpc":"2.0","method":"debug.version"}])", error);
     CHECK_FALSE(batch.has_value());
     CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+
+    auto nonStringVersion =
+        ymir::debug::JsonRpcAdapter::ParseRequest(R"({"jsonrpc":2,"method":"debug.version","id":1})", error);
+    CHECK_FALSE(nonStringVersion.has_value());
+    CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+
+    // Valid id echoed in error response; parse error and invalid id type produce null id
+    auto missingMethod = ymir::debug::JsonRpcAdapter::ParseRequest(R"({"jsonrpc":"2.0","id":7})", error);
+    CHECK_FALSE(missingMethod.has_value());
+    CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+    CHECK(error["id"] == 7);
+
+    auto parseErrorId = ymir::debug::JsonRpcAdapter::ParseRequest(R"({"jsonrpc":"2.0","method":)", error);
+    CHECK_FALSE(parseErrorId.has_value());
+    CHECK(error["id"].is_null());
+
+    auto invalidIdType =
+        ymir::debug::JsonRpcAdapter::ParseRequest(R"({"jsonrpc":"2.0","method":"debug.version","id":[]})", error);
+    CHECK_FALSE(invalidIdType.has_value());
+    CHECK(error["id"].is_null());
+
+    auto scalarParams = ymir::debug::JsonRpcAdapter::ParseRequest(
+        R"({"jsonrpc":"2.0","method":"debug.version","id":3,"params":"bad"})", error);
+    CHECK_FALSE(scalarParams.has_value());
+    CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidParams));
+    CHECK(error["id"] == 3);
+
+    auto nullParams = ymir::debug::JsonRpcAdapter::ParseRequest(
+        R"({"jsonrpc":"2.0","method":"debug.version","id":4,"params":null})", error);
+    CHECK_FALSE(nullParams.has_value());
+    CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidParams));
+    CHECK(error["id"] == 4);
+
+    auto arrayParams = ymir::debug::JsonRpcAdapter::ParseRequest(
+        R"({"jsonrpc":"2.0","method":"debug.version","id":5,"params":[]})", error);
+    REQUIRE(arrayParams.has_value());
+    CHECK(arrayParams->params.is_array());
 }

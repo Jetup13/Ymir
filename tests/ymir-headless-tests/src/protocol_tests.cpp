@@ -324,6 +324,68 @@ TEST_CASE("JsonRpcAdapter parses requests", "[protocol]") {
         CHECK_FALSE(req.has_value());
         CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::ParseError));
     }
+
+    SECTION("Non-string jsonrpc field") {
+        std::string line = R"({"jsonrpc": 2, "method": "debug.version", "id": 1})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+    }
+
+    SECTION("Valid id echoed in missing-method error") {
+        std::string line = R"({"jsonrpc": "2.0", "id": 99})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+        CHECK(error["id"] == 99);
+    }
+
+    SECTION("Valid id echoed in bad-version error") {
+        std::string line = R"({"jsonrpc": "1.0", "method": "debug.version", "id": 5})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+        CHECK(error["id"] == 5);
+    }
+
+    SECTION("Parse error id stays null") {
+        std::string line = R"({"jsonrpc": "2.0", "method":)";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::ParseError));
+        CHECK(error["id"].is_null());
+    }
+
+    SECTION("Invalid id type stays null in error") {
+        std::string line = R"({"jsonrpc": "2.0", "method": "debug.version", "id": []})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidRequest));
+        CHECK(error["id"].is_null());
+    }
+
+    SECTION("Scalar params rejected") {
+        std::string line = R"({"jsonrpc": "2.0", "method": "debug.version", "id": 1, "params": "bad"})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidParams));
+        CHECK(error["id"] == 1);
+    }
+
+    SECTION("Null params rejected") {
+        std::string line = R"({"jsonrpc": "2.0", "method": "debug.version", "id": 1, "params": null})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        CHECK_FALSE(req.has_value());
+        CHECK(error["error"]["code"] == static_cast<int>(ymir::debug::JsonRpcError::InvalidParams));
+        CHECK(error["id"] == 1);
+    }
+
+    SECTION("Array params accepted") {
+        std::string line = R"({"jsonrpc": "2.0", "method": "debug.version", "id": 1, "params": []})";
+        auto req = ymir::debug::JsonRpcAdapter::ParseRequest(line, error);
+        REQUIRE(req.has_value());
+        CHECK(req->params.is_array());
+    }
 }
 
 TEST_CASE("JsonRpcAdapter clears outError on success", "[protocol]") {

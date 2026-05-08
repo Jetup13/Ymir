@@ -89,21 +89,41 @@ public:
                 return std::nullopt;
             }
 
-            if (j.value("jsonrpc", "") != "2.0") {
-                outError = CreateErrorResponse(std::monostate{}, JsonRpcError::InvalidRequest,
-                                               "Invalid or missing jsonrpc version");
+            // Extract id early so validation errors can echo it back per JSON-RPC 2.0
+            JsonRpcId earlyId = std::monostate{};
+            if (j.contains("id")) {
+                if (j["id"].is_number_integer()) {
+                    earlyId = j["id"].get<int64_t>();
+                } else if (j["id"].is_string()) {
+                    earlyId = j["id"].get<std::string>();
+                }
+                // null or unrecognised id type: earlyId stays monostate (null in response)
+            }
+
+            if (!j.contains("jsonrpc") || !j["jsonrpc"].is_string() || j["jsonrpc"].get<std::string>() != "2.0") {
+                outError =
+                    CreateErrorResponse(earlyId, JsonRpcError::InvalidRequest, "Invalid or missing jsonrpc version");
                 return std::nullopt;
             }
 
             if (!j.contains("method") || !j["method"].is_string()) {
-                outError =
-                    CreateErrorResponse(std::monostate{}, JsonRpcError::InvalidRequest, "Missing or invalid method");
+                outError = CreateErrorResponse(earlyId, JsonRpcError::InvalidRequest, "Missing or invalid method");
                 return std::nullopt;
             }
 
             JsonRpcRequest req;
             req.method = j["method"].get<std::string>();
-            req.params = j.value("params", nlohmann::json::object());
+
+            if (j.contains("params")) {
+                req.params = j["params"];
+                if (!req.params.is_object() && !req.params.is_array()) {
+                    outError =
+                        CreateErrorResponse(earlyId, JsonRpcError::InvalidParams, "params must be object or array");
+                    return std::nullopt;
+                }
+            } else {
+                req.params = nlohmann::json::object();
+            }
 
             if (j.contains("id")) {
                 if (j["id"].is_number_integer()) {
@@ -113,7 +133,7 @@ public:
                 } else if (j["id"].is_null()) {
                     req.id = std::monostate{};
                 } else {
-                    outError = CreateErrorResponse(std::monostate{}, JsonRpcError::InvalidRequest, "Invalid id type");
+                    outError = CreateErrorResponse(earlyId, JsonRpcError::InvalidRequest, "Invalid id type");
                     return std::nullopt;
                 }
                 req.is_notification = false;
@@ -122,7 +142,7 @@ public:
             }
 
             return req;
-        } catch (const nlohmann::json::parse_error &) {
+        } catch (const nlohmann::json::exception &) {
             outError = CreateErrorResponse(std::monostate{}, JsonRpcError::ParseError, "Parse error");
             return std::nullopt;
         }
