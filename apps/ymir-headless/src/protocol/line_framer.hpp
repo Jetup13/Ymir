@@ -41,6 +41,7 @@ public:
 
             m_lastWasCarriageReturn = false;
             if (m_droppingOversizedLine) {
+                // Drain remaining bytes of the oversized line until the next terminator.
                 continue;
             }
             if (m_buffer.length() >= kMaxLineLength) {

@@ -94,11 +94,13 @@ public:
             if (j.contains("id")) {
                 if (j["id"].is_number_integer()) {
                     if (j["id"].is_number_unsigned()) {
+                        // nlohmann stores all non-negative integers as uint64_t on some versions,
+                        // so is_number_integer() alone does not guarantee get<int64_t>() is safe.
                         uint64_t uval = j["id"].get<uint64_t>();
                         if (uval <= static_cast<uint64_t>(INT64_MAX)) {
                             earlyId = static_cast<int64_t>(uval);
                         }
-                        // else: out of int64_t range — earlyId stays monostate (null in response)
+                        // else: out of int64_t range, earlyId stays monostate (null in response)
                     } else {
                         earlyId = j["id"].get<int64_t>();
                     }

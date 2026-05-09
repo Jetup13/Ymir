@@ -101,6 +101,7 @@ using DebugResultPayload =
     std::variant<std::monostate, DebugVersionResult, InstanceStatusResult, RegsReadResult, MemPeekResult,
                  DisasmAtResult, BreakpointSetResult, BreakpointListResult, ExecStepIResult>;
 
+// Variant enforces success XOR error at the type level; a result cannot carry both.
 using DebugResult = std::variant<DebugResultPayload, ErrorInfo>;
 
 } // namespace ymir::debug
