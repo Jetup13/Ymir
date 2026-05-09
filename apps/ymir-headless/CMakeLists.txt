@@ -1,6 +1,7 @@
 ## Create the executable target
 add_executable(ymir-headless
     src/main.cpp
+    src/toml_implementation.cpp
 )
 add_executable(ymir::ymir-headless ALIAS ymir-headless)
 
@@ -16,12 +17,14 @@ target_include_directories(ymir-headless
 target_compile_features(ymir-headless PUBLIC cxx_std_20)
 
 find_package(fmt CONFIG REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 ## Add dependencies
 target_link_libraries(ymir-headless PRIVATE
     ymir::ymir-core
     ymir::ymir-headless-proto
     fmt::fmt
+    tomlplusplus::tomlplusplus
 )
 
 cmrk_copy_runtime_dlls(ymir-headless)

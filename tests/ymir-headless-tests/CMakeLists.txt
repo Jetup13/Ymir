@@ -1,4 +1,6 @@
 add_executable(ymir-headless-tests
+    src/config_tests.cpp
+    src/config_parser_tests.cpp
     src/smoke_tests.cpp
     src/protocol_tests.cpp
 )
@@ -9,16 +11,15 @@ set_target_properties(ymir-headless-tests PROPERTIES
 target_compile_features(ymir-headless-tests PUBLIC cxx_std_20)
 
 find_package(Catch2 CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 target_link_libraries(ymir-headless-tests PRIVATE
     Catch2::Catch2WithMain
     ymir::ymir-headless-proto
     ymir::ymir-headless-framing
+    tomlplusplus::tomlplusplus
 )
-# Note: nlohmann_json is provided transitively by ymir-headless-framing.
-# The direct find_package above is kept for the test files that use
-# nlohmann::json directly (e.g., json_rpc_adapter tests).
+# nlohmann_json is provided transitively via ymir-headless-framing.
 
 cmrk_copy_runtime_dlls(ymir-headless-tests)
 
