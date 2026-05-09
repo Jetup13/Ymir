@@ -241,7 +241,9 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ${{ steps.strings.outputs.ymir-debug-symbols-name }}
-          path: build/apps/ymir-sdl3/ymir-sdl3.pdb
+          path: |
+            build/apps/ymir-sdl3/ymir-sdl3.exe
+            build/apps/ymir-sdl3/ymir-sdl3.pdb
 
   build-linux:
     name: linux-${{ matrix.compiler }}-${{ matrix.architecture.name }}
