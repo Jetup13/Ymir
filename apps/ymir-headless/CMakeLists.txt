@@ -10,7 +10,6 @@ set_target_properties(ymir-headless PROPERTIES
                       SOVERSION ${Ymir_VERSION_MAJOR})
 
 target_include_directories(ymir-headless
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
 )
 
@@ -22,7 +21,7 @@ find_package(tomlplusplus CONFIG REQUIRED)
 ## Add dependencies
 target_link_libraries(ymir-headless PRIVATE
     ymir::ymir-core
-    ymir::ymir-headless-proto
+    ymir::ymir-dbg-commons
     fmt::fmt
     tomlplusplus::tomlplusplus
 )

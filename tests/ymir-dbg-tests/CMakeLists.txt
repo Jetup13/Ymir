@@ -10,14 +10,17 @@ set_target_properties(ymir-dbg-tests PROPERTIES
                       SOVERSION ${Ymir_VERSION_MAJOR})
 target_compile_features(ymir-dbg-tests PUBLIC cxx_std_20)
 
+target_include_directories(ymir-dbg-tests PRIVATE
+    "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/apps/ymir-dbg/src>"
+)
+
 find_package(Catch2 CONFIG REQUIRED)
 
 target_link_libraries(ymir-dbg-tests PRIVATE
     Catch2::Catch2WithMain
-    ymir::ymir-headless-proto
-    ymir::ymir-dbg-framing
+    ymir::ymir-dbg-commons
 )
-# nlohmann_json is provided transitively via ymir-dbg-framing.
+# nlohmann_json is provided transitively via ymir-dbg-commons.
 
 cmrk_copy_runtime_dlls(ymir-dbg-tests)
 
