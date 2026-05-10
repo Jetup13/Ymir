@@ -7,7 +7,10 @@
 #include <optional>
 #include <string>
 
+#include <cstdlib>
+
 #include <ymir/debug/util/env.hpp>
+#include <ymir/debug/util/path.hpp>
 
 namespace fs = std::filesystem;
 
@@ -37,6 +40,12 @@ private:
     const char *m_name;
     std::optional<std::string> m_prior;
 };
+
+#ifdef _WIN32
+constexpr std::string_view kHeadlessBinaryName = "ymir-headless.exe";
+#else
+constexpr std::string_view kHeadlessBinaryName = "ymir-headless";
+#endif
 
 } // namespace
 
@@ -84,14 +93,47 @@ TEST_CASE("discovery: YMIR_HEADLESS env var finds file", "[discovery]") {
 
     auto result = ymir::debug::find_headless_binary();
 
-    env.Unset();
-    fs::remove(tmp);
-
     REQUIRE(result.has_value());
     std::error_code ec;
     auto expected = fs::canonical(tmp, ec);
     auto actual = fs::canonical(result.value(), ec);
     CHECK(actual == expected);
+
+    env.Unset();
+    fs::remove(tmp);
+}
+
+TEST_CASE("discovery: PATH env var finds binary by name", "[discovery]") {
+    auto tmp_dir = fs::temp_directory_path() / "ymir-dbg-path-test";
+    fs::create_directories(tmp_dir);
+
+    auto binary = tmp_dir / kHeadlessBinaryName;
+    {
+        std::ofstream ofs(binary);
+        ofs << "dummy";
+    }
+
+    // Prepend tmp_dir to PATH so discovery hits it before any real install.
+    ScopedEnvVar path_env{"PATH"};
+    std::string new_path = tmp_dir.string();
+    if (const char *existing = std::getenv("PATH"); existing && *existing) {
+        new_path += ymir::debug::util::kSearchPathDelimiter;
+        new_path += existing;
+    }
+    path_env.Set(new_path);
+
+    // Ensure YMIR_HEADLESS does not short-circuit to Level 2.
+    ScopedEnvVar headless_env{"YMIR_HEADLESS"};
+    headless_env.Unset();
+
+    auto result = ymir::debug::find_headless_binary();
+
+    REQUIRE(result.has_value());
+    std::error_code ec1, ec2;
+    CHECK(fs::canonical(result.value(), ec1) == fs::canonical(binary, ec2));
+
+    fs::remove(binary);
+    fs::remove(tmp_dir);
 }
 
 TEST_CASE("discovery: all levels fail returns nullopt", "[discovery]") {

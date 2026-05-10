@@ -15,6 +15,12 @@
 #elif defined(__linux__)
 #include <unistd.h>
 #include <linux/limits.h>
+#elif defined(_WIN32)
+// Prevent windows.h from defining min/max macros that clash with std::min/max.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace ymir::debug {
@@ -29,7 +35,12 @@ namespace ymir::debug {
 // explicit flag that resolves to nothing is almost certainly a misconfiguration.
 inline std::optional<std::filesystem::path> find_headless_binary(std::string_view explicit_path = {}) {
     namespace fs = std::filesystem;
+#ifdef _WIN32
+    // Manual fs::exists checks do not consult PATHEXT, so append .exe explicitly.
+    constexpr const char *kBinaryName = "ymir-headless.exe";
+#else
     constexpr const char *kBinaryName = "ymir-headless";
+#endif
 
     // Level 1: explicit path (--headless-path flag)
     if (!explicit_path.empty()) {
@@ -42,6 +53,8 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
     }
 
     // Level 2: YMIR_HEADLESS environment variable
+    // Unlike Level 1, a set-but-wrong path falls through to Level 3/4 rather
+    // than failing fast — the var may be a stale leftover from another install.
     if (const char *env = std::getenv("YMIR_HEADLESS")) {
         fs::path p(env);
         if (fs::exists(p) && fs::is_regular_file(p)) {
@@ -69,21 +82,24 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
     // Level 4: adjacent binary (same directory as ymir-dbg)
     // Covers installed and packaged layouts where both binaries land in the
     // same prefix/bin directory without any PATH or env configuration.
+    auto check_adjacent = [&](const fs::path &exePath) -> std::optional<fs::path> {
+        std::error_code ec;
+        fs::path can = fs::canonical(exePath, ec);
+        if (ec) { return std::nullopt; }
+        fs::path adjacent = can.parent_path() / kBinaryName;
+        if (fs::exists(adjacent) && fs::is_regular_file(adjacent)) {
+            fmt::print(stderr, "[ymir-dbg] found headless via adjacent binary: {}\n", adjacent.string());
+            return adjacent;
+        }
+        return std::nullopt;
+    };
+
 #if defined(__APPLE__)
     {
         char buf[PATH_MAX] = {};
         uint32_t bufSize = PATH_MAX;
         if (_NSGetExecutablePath(buf, &bufSize) == 0) {
-            fs::path exePath(buf);
-            std::error_code ec;
-            fs::path can = fs::canonical(exePath, ec);
-            if (!ec) {
-                fs::path adjacent = can.parent_path() / kBinaryName;
-                if (fs::exists(adjacent) && fs::is_regular_file(adjacent)) {
-                    fmt::print(stderr, "[ymir-dbg] found headless via adjacent binary: {}\n", adjacent.string());
-                    return adjacent;
-                }
-            }
+            if (auto result = check_adjacent(fs::path(buf))) { return result; }
         }
     }
 #elif defined(__linux__)
@@ -92,15 +108,18 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
         ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
         if (len > 0) {
             buf[len] = '\0';
-            std::error_code ec;
-            fs::path can = fs::canonical(fs::path(buf), ec);
-            if (!ec) {
-                fs::path adjacent = can.parent_path() / kBinaryName;
-                if (fs::exists(adjacent) && fs::is_regular_file(adjacent)) {
-                    fmt::print(stderr, "[ymir-dbg] found headless via adjacent binary: {}\n", adjacent.string());
-                    return adjacent;
-                }
-            }
+            if (auto result = check_adjacent(fs::path(buf))) { return result; }
+        }
+    }
+#elif defined(_WIN32)
+    {
+        wchar_t buf[MAX_PATH] = {};
+        // nullptr = query the current process module (ymir-dbg itself).
+        DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        // len == MAX_PATH means the buffer was too small; treat as no hit
+        // rather than use a truncated path. Long-path installs are a v0 limitation.
+        if (len > 0 && len < MAX_PATH) {
+            if (auto result = check_adjacent(fs::path(buf))) { return result; }
         }
     }
 #endif
