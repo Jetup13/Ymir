@@ -15,10 +15,12 @@ target_include_directories(ymir-dbg-tests PRIVATE
 )
 
 find_package(Catch2 CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 target_link_libraries(ymir-dbg-tests PRIVATE
     Catch2::Catch2WithMain
     ymir::ymir-dbg-commons
+    fmt::fmt
 )
 # nlohmann_json is provided transitively via ymir-dbg-commons.
 

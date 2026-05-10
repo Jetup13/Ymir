@@ -1,11 +1,13 @@
 #pragma once
 
-#include <cstdio>
+#include <fmt/format.h>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <ymir/debug/util/path.hpp>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -33,7 +35,7 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
     if (!explicit_path.empty()) {
         fs::path p(explicit_path);
         if (fs::exists(p) && fs::is_regular_file(p)) {
-            std::fprintf(stderr, "[ymir-dbg] found headless via explicit path: %s\n", p.c_str());
+            fmt::print(stderr, "[ymir-dbg] found headless via explicit path: {}\n", p.string());
             return p;
         }
         return std::nullopt;
@@ -43,7 +45,7 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
     if (const char *env = std::getenv("YMIR_HEADLESS")) {
         fs::path p(env);
         if (fs::exists(p) && fs::is_regular_file(p)) {
-            std::fprintf(stderr, "[ymir-dbg] found headless via YMIR_HEADLESS: %s\n", p.c_str());
+            fmt::print(stderr, "[ymir-dbg] found headless via YMIR_HEADLESS: {}\n", p.string());
             return p;
         }
     }
@@ -53,20 +55,12 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
     // intended workflow. Could collide with a same-named binary on a compromised
     // PATH, but that is not a concern on typical dev machines.
     if (const char *pathEnv = std::getenv("PATH")) {
-        std::string pathStr(pathEnv);
-        size_t pos = 0;
-        while (pos < pathStr.size()) {
-            size_t next = pathStr.find(':', pos);
-            std::string dir = (next == std::string::npos) ? pathStr.substr(pos)
-                                                          : pathStr.substr(pos, next - pos);
-            pos = (next == std::string::npos) ? pathStr.size() : next + 1;
-
-            if (dir.empty()) {
-                continue;
-            }
+        // Use our cross-platform utility to correctly handle colons (POSIX) or semicolons (Windows)
+        auto segments = ymir::debug::util::SplitSearchPath(pathEnv);
+        for (const auto& dir : segments) {
             fs::path candidate = fs::path(dir) / kBinaryName;
             if (fs::exists(candidate) && fs::is_regular_file(candidate)) {
-                std::fprintf(stderr, "[ymir-dbg] found headless via PATH: %s\n", candidate.c_str());
+                fmt::print(stderr, "[ymir-dbg] found headless via PATH: {}\n", candidate.string());
                 return candidate;
             }
         }
@@ -86,8 +80,7 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
             if (!ec) {
                 fs::path adjacent = can.parent_path() / kBinaryName;
                 if (fs::exists(adjacent) && fs::is_regular_file(adjacent)) {
-                    std::fprintf(stderr, "[ymir-dbg] found headless via adjacent binary: %s\n",
-                                 adjacent.c_str());
+                    fmt::print(stderr, "[ymir-dbg] found headless via adjacent binary: {}\n", adjacent.string());
                     return adjacent;
                 }
             }
@@ -104,8 +97,7 @@ inline std::optional<std::filesystem::path> find_headless_binary(std::string_vie
             if (!ec) {
                 fs::path adjacent = can.parent_path() / kBinaryName;
                 if (fs::exists(adjacent) && fs::is_regular_file(adjacent)) {
-                    std::fprintf(stderr, "[ymir-dbg] found headless via adjacent binary: %s\n",
-                                 adjacent.c_str());
+                    fmt::print(stderr, "[ymir-dbg] found headless via adjacent binary: {}\n", adjacent.string());
                     return adjacent;
                 }
             }

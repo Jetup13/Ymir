@@ -10,10 +10,13 @@
 #include <string>
 #include <vector>
 
+#include <ymir/debug/util/env.hpp>
+
 namespace {
 
 class ScopedEnvVar {
 public:
+    /// @brief Captures the current value of the environment variable.
     explicit ScopedEnvVar(const char *name)
         : m_name(name) {
         if (const char *value = std::getenv(name)) {
@@ -21,20 +24,21 @@ public:
         }
     }
 
+    /// @brief Restores the environment variable to its state at object creation.
     ~ScopedEnvVar() {
         if (m_prior) {
-            setenv(m_name, m_prior->c_str(), 1);
+            ymir::debug::util::EnvSet(m_name, *m_prior);
         } else {
-            unsetenv(m_name);
+            ymir::debug::util::EnvUnset(m_name);
         }
     }
 
     void Set(const std::filesystem::path &path) const {
-        setenv(m_name, path.string().c_str(), 1);
+        ymir::debug::util::EnvSet(m_name, path.string());
     }
 
     void Unset() const {
-        unsetenv(m_name);
+        ymir::debug::util::EnvUnset(m_name);
     }
 
 private:

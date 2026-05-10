@@ -4,12 +4,12 @@
 #include <fmt/format.h>
 
 #include <array>
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -21,6 +21,7 @@
 
 namespace {
 
+#if defined(__unix__) || defined(__APPLE__)
 std::vector<const char *> BuildArgv(const std::filesystem::path &headlessPath,
                                     const std::vector<std::string> &extraArgs) {
     std::vector<const char *> argv;
@@ -31,8 +32,6 @@ std::vector<const char *> BuildArgv(const std::filesystem::path &headlessPath,
     argv.push_back(nullptr);
     return argv;
 }
-
-#if defined(__unix__) || defined(__APPLE__)
 bool WriteAll(int fd, const char *buf, size_t n) {
     size_t written = 0;
     while (written < n) {
