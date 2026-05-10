@@ -6,6 +6,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <cstdlib>
 
@@ -25,7 +26,7 @@ public:
             m_prior = value;
         }
     }
-    
+
     /// @brief Restores the environment variable to its state at object creation.
     ~ScopedEnvVar() {
         if (m_prior) {
@@ -34,8 +35,13 @@ public:
             ymir::debug::util::EnvUnset(m_name);
         }
     }
-    void Set(const std::string &value) { ymir::debug::util::EnvSet(m_name, value); }
-    void Unset() { ymir::debug::util::EnvUnset(m_name); }
+    void Set(const std::string &value) {
+        ymir::debug::util::EnvSet(m_name, value);
+    }
+    void Unset() {
+        ymir::debug::util::EnvUnset(m_name);
+    }
+
 private:
     const char *m_name;
     std::optional<std::string> m_prior;
@@ -43,6 +49,14 @@ private:
 
 #ifdef _WIN32
 constexpr std::string_view kHeadlessBinaryName = "ymir-headless.exe";
+
+std::optional<fs::path> WindowsCmdPathFromSystemRoot() {
+    const char *systemRoot = std::getenv("SystemRoot");
+    if (systemRoot == nullptr || *systemRoot == '\0') {
+        return std::nullopt;
+    }
+    return fs::path{systemRoot} / "System32" / "cmd.exe";
+}
 #else
 constexpr std::string_view kHeadlessBinaryName = "ymir-headless";
 #endif
@@ -62,13 +76,27 @@ TEST_CASE("discovery: explicit path finds existing file", "[discovery]") {
 }
 #else
 TEST_CASE("discovery: explicit path finds existing file", "[discovery]") {
-    // Use a file known to exist on Windows systems
-    auto result = ymir::debug::find_headless_binary("C:\\Windows\\System32\\cmd.exe");
+    // Use a file known to exist on Windows systems.
+    auto cmdPath = WindowsCmdPathFromSystemRoot();
+    REQUIRE(cmdPath.has_value());
+    REQUIRE(fs::is_regular_file(*cmdPath));
+
+    auto result = ymir::debug::find_headless_binary(cmdPath->string());
     REQUIRE(result.has_value());
     std::error_code ec;
-    auto expected = fs::canonical("C:\\Windows\\System32\\cmd.exe", ec);
+    auto expected = fs::canonical(*cmdPath, ec);
     auto actual = fs::canonical(result.value(), ec);
     CHECK(actual == expected);
+}
+
+TEST_CASE("discovery: Windows SystemRoot helper honors non-C drive", "[discovery]") {
+    ScopedEnvVar systemRoot{"SystemRoot"};
+    systemRoot.Set("D:\\CustomWindows");
+
+    auto cmdPath = WindowsCmdPathFromSystemRoot();
+
+    REQUIRE(cmdPath.has_value());
+    CHECK(*cmdPath == fs::path{"D:\\CustomWindows"} / "System32" / "cmd.exe");
 }
 #endif
 
