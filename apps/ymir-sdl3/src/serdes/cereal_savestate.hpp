@@ -1696,8 +1696,12 @@ void serialize(Archive &ar, SaveState &s, const uint32 version) {
     // - New fields:
     //   - uint64 ssh2SpilloverCycles = 0
 
-    // Reject version 0 and future versions
-    if (version == 0 || version > kVersion) {
+    // Ignore version 0 (empty save state)
+    if (version == 0) {
+        return;
+    }
+    // Reject future versions
+    if (version > kVersion) {
         throw cereal::Exception(
             fmt::format("Save state version is higher than supported ({} > {})", version, kVersion));
     }
