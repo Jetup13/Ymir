@@ -1612,11 +1612,16 @@ void SoftwareVDPRenderer::VDP1Cmd_DrawDistortedSprite(uint32 cmdAddress, VDP1Com
     const sint32 xd = bit::sign_extend<13>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x18)) + ctx.localCoordX;
     const sint32 yd = bit::sign_extend<13>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x1A)) + ctx.localCoordY;
 
+    const bool isRegularRect = (xa == xd) && (xb == xc) && (ya == yb) && (yc == yd);
+
     const sint32 doubleV = m_VDP1doubleV;
-    const CoordS32 coordA{xa, ya << doubleV};
-    const CoordS32 coordB{xb, yb << doubleV};
-    const CoordS32 coordC{xc, yc << doubleV};
-    const CoordS32 coordD{xd, yd << doubleV};
+    const sint32 yAddAB = deinterlace && isRegularRect && (ya >= yc) ? doubleV : 0;
+    const sint32 yAddCD = deinterlace && isRegularRect && (ya < yc) ? doubleV : 0;
+
+    const CoordS32 coordA{xa, (ya << doubleV) + yAddAB};
+    const CoordS32 coordB{xb, (yb << doubleV) + yAddAB};
+    const CoordS32 coordC{xc, (yc << doubleV) + yAddCD};
+    const CoordS32 coordD{xd, (yd << doubleV) + yAddCD};
 
     devlog::trace<grp::swvdp1_cmd>(
         "[{:05X}] Draw distorted sprite: {:6d}x{:<6d} {:6d}x{:<6d} {:6d}x{:<6d} {:6d}x{:<6d}", cmdAddress, xa, ya, xb,
@@ -1645,11 +1650,16 @@ void SoftwareVDPRenderer::VDP1Cmd_DrawPolygon(uint32 cmdAddress) {
     const sint32 yd = bit::sign_extend<13>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x1A)) + ctx.localCoordY;
     const uint32 gouraudTable = static_cast<uint32>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x1C)) << 3u;
 
+    const bool isRegularRect = (xa == xd) && (xb == xc) && (ya == yb) && (yc == yd);
+
     const sint32 doubleV = m_VDP1doubleV;
-    const CoordS32 coordA{xa, ya << doubleV};
-    const CoordS32 coordB{xb, yb << doubleV};
-    const CoordS32 coordC{xc, yc << doubleV};
-    const CoordS32 coordD{xd, yd << doubleV};
+    const sint32 yAddAB = deinterlace && isRegularRect && (ya >= yc) ? doubleV : 0;
+    const sint32 yAddCD = deinterlace && isRegularRect && (ya < yc) ? doubleV : 0;
+
+    const CoordS32 coordA{xa, (ya << doubleV) + yAddAB};
+    const CoordS32 coordB{xb, (yb << doubleV) + yAddAB};
+    const CoordS32 coordC{xc, (yc << doubleV) + yAddCD};
+    const CoordS32 coordD{xd, (yd << doubleV) + yAddCD};
 
     devlog::trace<grp::swvdp1_cmd>("[{:05X}] Draw polygon: {:6d}x{:<6d} {:6d}x{:<6d} {:6d}x{:<6d} {:6d}x{:<6d}, color "
                                    "{:04X}, gouraud table {:05X}, CMDPMOD = {:04X}",
@@ -1750,11 +1760,16 @@ void SoftwareVDPRenderer::VDP1Cmd_DrawPolylines(uint32 cmdAddress) {
     const sint32 yd = bit::sign_extend<13>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x1A)) + ctx.localCoordY;
     const uint32 gouraudTable = static_cast<uint32>(VDP1ReadRendererVRAM<uint16>(cmdAddress + 0x1C)) << 3u;
 
+    const bool isRegularRect = (xa == xd) && (xb == xc) && (ya == yb) && (yc == yd);
+
     const sint32 doubleV = m_VDP1doubleV;
-    const CoordS32 coordA{xa, ya << doubleV};
-    const CoordS32 coordB{xb, yb << doubleV};
-    const CoordS32 coordC{xc, yc << doubleV};
-    const CoordS32 coordD{xd, yd << doubleV};
+    const sint32 yAddAB = deinterlace && isRegularRect && (ya >= yc) ? doubleV : 0;
+    const sint32 yAddCD = deinterlace && isRegularRect && (ya < yc) ? doubleV : 0;
+
+    const CoordS32 coordA{xa, (ya << doubleV) + yAddAB};
+    const CoordS32 coordB{xb, (yb << doubleV) + yAddAB};
+    const CoordS32 coordC{xc, (yc << doubleV) + yAddCD};
+    const CoordS32 coordD{xd, (yd << doubleV) + yAddCD};
 
     devlog::trace<grp::swvdp1_cmd>(
         "[{:05X}] Draw polylines: {}x{} - {}x{} - {}x{} - {}x{}, color {:04X}, gouraud table {:05X}, CMDPMOD = {:04X}",
