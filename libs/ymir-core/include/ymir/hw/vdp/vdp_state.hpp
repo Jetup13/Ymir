@@ -583,7 +583,13 @@ struct VDP2State {
                                 // Illegal CP access in T0-T3
                                 // If PN happens before first CP, shift left, otherwise shift right
                                 if (pnIndex < std::countr_zero(bgCP)) {
-                                    bgParams.vramDataOffset.fill(8u);
+                                    // If there is a PN access on the same bank as the illegal CP access which would
+                                    // cause the CP access to be legal again, make it so.
+                                    // FIXME: this is probably incorrect, but works with every known test case so far.
+                                    const uint8 pnIndexBank = std::countr_zero(bgPNBank);
+                                    if (!bgPNBank || (bgCPBank & kLoResPatterns[pnIndexBank]) == 0) {
+                                        bgParams.vramDataOffset.fill(8u);
+                                    }
                                 } else {
                                     bgParams.charPatDelay.fill(true);
                                 }
